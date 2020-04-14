@@ -1,0 +1,173 @@
+# Reference: https://raw.githubusercontent.com/awslabs/aws-multi-account-viewer/master/Back-End/cloudformation/MainTemplate.yaml
+
+Parameters:
+  TableName:
+    Type: String
+    Default: RashmiDynamoDB
+    Description: Name of DynamoDB table
+  
+  MinDynamoScaleSpeed:
+    Type: Number
+    Description: How low should DynamoDB scale
+    Default: 25
+  MaxDynamoScaleSpeed:
+    Type: Number
+    Description: How high should DynamoDB scale
+    Default: 250
+
+Resources:
+  # Scaling Role for DynamoDB
+  ScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "dynamodb:DescribeTable"
+                  - "dynamodb:UpdateTable"
+                  - "cloudwatch:PutMetricAlarm"
+                  - "cloudwatch:DescribeAlarms"
+                  - "cloudwatch:GetMetricStatistics"
+                  - "cloudwatch:SetAlarmState"
+                  - "cloudwatch:DeleteAlarms"
+                Resource: "*"
+
+  DynamoTable:
+     Type: AWS::DynamoDB::Table
+     Properties: 
+       SSESpecification:
+          SSEEnabled: True
+       TableName: !Ref TableName
+       AttributeDefinitions: 
+         - AttributeName: Id
+           AttributeType: S
+         - AttributeName: EntryType
+           AttributeType: S
+       KeySchema: 
+         - AttributeName: Id
+           KeyType: HASH
+       ProvisionedThroughput: 
+         ReadCapacityUnits: 25
+         WriteCapacityUnits: 25
+       GlobalSecondaryIndexes:
+         -
+          IndexName: "EntryType-index"
+          KeySchema:
+            - AttributeName: EntryType
+              KeyType: HASH
+          Projection: 
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 25
+            WriteCapacityUnits: 25
+       Tags:
+         - 
+           Key: Name
+           Value: !Sub "${AWS::StackName}-DynamoDBTable"
+
+  # DynamoDB Scaling
+  UserTableWriteCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: !Ref MaxDynamoScaleSpeed
+      MinCapacity: !Ref MinDynamoScaleSpeed
+      ResourceId: !Sub table/${TableName}
+      RoleARN: !GetAtt ScalingRole.Arn
+      ScalableDimension: "dynamodb:table:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+  UserTableWriteScalingPolicy: 
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties: 
+      PolicyName: WriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: 
+        Ref: UserTableWriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration: 
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+  UserIndexWriteCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: !Ref MaxDynamoScaleSpeed
+      MinCapacity: !Ref MinDynamoScaleSpeed
+      ResourceId: !Sub table/${TableName}/index/EntryType-index
+      RoleARN: !GetAtt ScalingRole.Arn
+      ScalableDimension: "dynamodb:index:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+  UserIndexWriteScalingPolicy: 
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties: 
+      PolicyName: WriteAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: 
+        Ref: UserIndexWriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration: 
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+  UserTableReadCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: !Ref MaxDynamoScaleSpeed
+      MinCapacity: !Ref MinDynamoScaleSpeed
+      ResourceId: !Sub table/${TableName}
+      RoleARN: !GetAtt ScalingRole.Arn
+      ScalableDimension: "dynamodb:table:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+  UserTableReadScalingPolicy: 
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties: 
+      PolicyName: ReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: 
+        Ref: UserTableReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration: 
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+  UserIndexReadCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: !Ref MaxDynamoScaleSpeed
+      MinCapacity: !Ref MinDynamoScaleSpeed
+      ResourceId: !Sub table/${TableName}/index/EntryType-index
+      RoleARN: !GetAtt ScalingRole.Arn
+      ScalableDimension: "dynamodb:index:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+  UserIndexReadScalingPolicy: 
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties: 
+      PolicyName: ReadAutoScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: 
+        Ref: UserIndexReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration: 
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification: 
+          PredefinedMetricType: DynamoDBReadCapacityUtilization

@@ -1,0 +1,94 @@
+# Reference - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket.html#aws-properties-s3-bucket--examples
+# reference - https://github.com/weibeld/sam-hello-world/tree/master/sam-hello-world-2
+# reference - https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-resource-function--examples
+
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: PublicRead
+      BucketName: rashmi-bisl-bucket
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+    DeletionPolicy: Retain
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http
+      VpcId: vpc-58a9af3f
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 108.171.134.189/32
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 108.171.134.189/32
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      Scheme: internet-facing #Internal if connected via direct connect
+      SecurityGroups: 
+        - !Ref SecurityGroup
+      Subnets: 
+        - subnet-0fdfc446
+        - subnet-3b58b65d
+        - subnet-6b990133
+      
+  HTTPlistener:
+   Type: "AWS::ElasticLoadBalancingV2::Listener"
+   Properties:
+     DefaultActions:
+       -
+        TargetGroupArn: !Ref MyTargetGroup
+        Type: forward
+     LoadBalancerArn: !Ref ALB
+     Port: 80
+     Protocol: "HTTP"
+
+  MyLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt 
+        - HelloWorldFunction
+        - Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: elasticloadbalancing.amazonaws.com
+
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: false
+      Name: MyTargets
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt [ HelloWorldFunction, Arn ]
+
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs10.x
+      InlineCode: |
+        exports.handler = async function(event, context) {
+            return { statusCode: 200, body: 'Hello World!' };
+        };
+
+Outputs:
+  WebsiteURL:
+    Value: !GetAtt [S3Bucket, WebsiteURL]
+    Description: URL for website hosted on S3
+
+  S3BucketSecureURL:
+    Value: !Join ["", ["https://", !GetAtt [S3Bucket, DomainName]]]
+    Description: Name of S3 bucket to hold website content
+  
+  ALBURL:
+    Value: !GetAtt ALB.DNSName
+
